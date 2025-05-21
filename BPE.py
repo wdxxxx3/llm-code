@@ -6,195 +6,296 @@ EOW = '</w>'
 
 def get_initial_vocab_and_word_counts(corpus_text):
     """
-    1. 将原始文本分割成单词。
-    2. 在每个单词末尾添加 EOW 符号。
-    3. 统计处理后单词的频率。
-    4. 构建初始字符词典。
+    1. Splits the raw corpus text into words.
+    2. Appends the EOW (End Of Word) symbol to each word.
+    3. Converts words into space-separated character sequences (e.g., "low" -> "l o w </w>").
+    4. Counts the frequency of these character sequences.
+    5. Builds an initial vocabulary of unique individual characters.
+
+    This BPE implementation operates at the character level.
 
     Args:
-        corpus_text (str): 原始文本语料。
+        corpus_text (str): The raw text corpus. It's recommended to be in lowercase.
 
     Returns:
         tuple: (
-            word_counts (collections.Counter): 单词频率，如 {'l o w </w>': 5, ...}
-                                            注意：这里的key是空格分隔的字符序列
-            initial_char_vocab (set): 初始的单个字符集合
+            word_char_counts (collections.Counter): Frequencies of words, where words
+                are represented as space-separated character sequences
+                e.g., {'l o w </w>': 5, ...}.
+            initial_char_vocab (set): The initial set of unique individual characters
+                found in the corpus.
         )
     """
-    # 使用正则表达式进行简单的分词（按空格和标点），并转换为小写
-    # \w+ 匹配单词字符，'[^A-Za-z0-9\s]+' 匹配非字母数字空格的标点作为分隔符
-    # 或者更简单地，只按空格分割，然后处理标点（这里为了简化，我们假设单词已经比较干净）
-    raw_words = re.findall(r'\b\w+\b', corpus_text.lower())
+    # Use regex to split into words (sequences of word characters).
+    # .strip() handles leading/trailing whitespace for the whole corpus.
+    # .lower() converts text to lowercase.
+    raw_words = re.findall(r'\b\w+\b', corpus_text.strip().lower())
 
-    # 为每个单词添加 EOW，并将其拆分为字符，用空格连接
-    # 例如 "low" -> "l o w </w>"
-    # 我们需要存储原始单词及其频率，但为了BPE操作，我们会将其表示为字符列表
-    processed_words_for_counting = []
+    # For each word, add EOW, split into characters, and join with spaces.
+    # e.g., "low" -> "l o w </w>"
+    # This character sequence representation is used for BPE operations.
+    processed_word_char_sequences = []
     for word in raw_words:
-        processed_words_for_counting.append(" ".join(list(word)) + " " + EOW)
+        # Each word is converted to a list of its characters,
+        # then joined by spaces, with EOW appended.
+        processed_word_char_sequences.append(" ".join(list(word)) + " " + EOW)
 
-    word_counts = collections.Counter(processed_words_for_counting)
+    # Count frequencies of these character-sequence representations of words.
+    word_char_counts = collections.Counter(processed_word_char_sequences)
 
-    # 构建初始字符词典
+    # Build the initial character vocabulary from the character sequences.
+    # This vocabulary will initially contain all single characters.
     initial_char_vocab = set()
-    for word_chars_str in word_counts:
-        initial_char_vocab.update(word_chars_str.split())
+    for char_sequence_str in word_char_counts:
+        initial_char_vocab.update(char_sequence_str.split()) # Splits "l o w </w>" into ['l','o','w','</w>']
 
-    print("--- 步骤 0: 预处理和初始词典 ---")
-    print(f"原始词频 (以空格分隔的字符序列表示): {word_counts}")
-    print(f"初始字符词典: {sorted(list(initial_char_vocab))}\n")
-    return word_counts, initial_char_vocab
+    print("--- Step 0: Preprocessing and Initial Character Vocabulary ---")
+    print(f"Word frequencies (represented as space-separated char sequences): {word_char_counts}")
+    print(f"Initial character vocabulary: {sorted(list(initial_char_vocab))}\n")
+    return word_char_counts, initial_char_vocab
 
 
-def get_pair_stats(word_counts):
+def get_pair_stats(word_char_counts):
     """
-    统计所有单词中相邻符号对的频率。
-    `word_counts` 是一个 Counter，key 是空格分隔的符号序列，value 是频率。
-    例如: {'l o w </w>': 5, 'n e w e s t </w>': 6}
+    Counts the frequency of adjacent character pairs in all word representations.
+    `word_char_counts` is a Counter where keys are space-separated character
+    sequences (representing words or segments) and values are their frequencies.
+    e.g., {'l o w </w>': 5, 'n e w e s t </w>': 6}
 
     Args:
-        word_counts (collections.Counter): 当前单词（表示为符号序列）及其频率。
+        word_char_counts (collections.Counter): Current word/segment frequencies,
+                                                where keys are space-separated
+                                                character sequences.
 
     Returns:
-        collections.Counter: 相邻符号对的频率，如 {('l', 'o'): 7, ('e', 's'): 9}
+        collections.Counter: Frequencies of adjacent character pairs,
+                             e.g., {('l', 'o'): 7, ('e', 's'): 9}.
+                             Each key is a tuple (char1, char2).
     """
     pair_stats = collections.defaultdict(int)
-    for word_chars_str, freq in word_counts.items():
-        symbols = word_chars_str.split()
-        for i in range(len(symbols) - 1):
-            pair = (symbols[i], symbols[i+1])
-            pair_stats[pair] += freq # 乘以该单词的频率
+    for char_sequence_str, freq in word_char_counts.items():
+        # Split the string "c1 c2 c3" into a list ['c1', 'c2', 'c3']
+        chars_list = char_sequence_str.split()
+        for i in range(len(chars_list) - 1):
+            pair = (chars_list[i], chars_list[i+1])
+            pair_stats[pair] += freq # Add frequency of the sequence containing this pair
     return pair_stats
 
 
-def merge_pair(target_pair, word_counts_in):
+def merge_pair(target_char_pair, word_char_counts_in):
     """
-    在所有单词中合并指定的符号对。
-    例如，如果 target_pair = ('e', 's')，则 "n e w e s t </w>" 会变成 "n e w es t </w>"。
+    Merges a specified character pair in all word/segment character sequence representations.
+    For example, if target_char_pair = ('e', 's'), then a sequence "n e w e s t </w>"
+    becomes "n e w es t </w>".
 
     Args:
-        target_pair (tuple): 要合并的符号对，如 ('e', 's')。
-        word_counts_in (collections.Counter): 输入的单词频率。
+        target_char_pair (tuple): The character pair to merge, e.g., ('e', 's').
+        word_char_counts_in (collections.Counter): Input word/segment frequencies,
+            where keys are space-separated character sequences.
 
     Returns:
-        collections.Counter: 合并后的新的单词频率。
+        collections.Counter: New word/segment frequencies after merging the pair.
+            Keys are the updated space-separated character sequences.
     """
-    word_counts_out = collections.defaultdict(int)
-    bigram = re.escape(' '.join(target_pair)) #  ('e', 's') -> 'e s'
-    replacement = ''.join(target_pair)       #  ('e', 's') -> 'es'
+    word_char_counts_out = collections.defaultdict(int)
+    # String representation of the pair to find, e.g., ('e', 's') -> 'e s'
+    pair_to_replace_str = ' '.join(target_char_pair)
+    # The merged segment, e.g., ('e', 's') -> 'es'
+    merged_segment = ''.join(target_char_pair)
 
-    for word_chars_str, freq in word_counts_in.items():
-        # 使用正则表达式替换，确保只替换独立的对（通过空格分隔）
-        new_word_chars_str = re.sub(r'(?<!\S)' + bigram + r'(?!\S)', replacement, word_chars_str)
-        # (?<!\S) 前面不是非空白字符（即前面是空白或行首）
-        # (?!\S)  后面不是非空白字符（即后面是空白或行尾）
-        # 上面的正则可能过于严格，对于 't e s t' 和 'es'，它不会匹配中间的 'e s'
-        # 更简单的方式是直接在 split 后的 list 上操作，但 re.sub 更快
-        # 这里我们用更简单的方式，因为 key 本身就是 'symbol1 symbol2 ...'
-        # 直接用字符串替换
-        new_word_chars_str = word_chars_str.replace(' '.join(target_pair), replacement)
-        word_counts_out[new_word_chars_str] += freq
+    for char_sequence_str, freq in word_char_counts_in.items():
+        # Replace the spaced pair string with the merged segment string
+        # Example: "n e w e s t </w>".replace('e s', 'es') -> "n e w es t </w>"
+        new_char_sequence_str = char_sequence_str.replace(pair_to_replace_str, merged_segment)
+        word_char_counts_out[new_char_sequence_str] += freq
 
-    return word_counts_out
+    return word_char_counts_out
 
 
 def train_bpe(corpus_text, num_merges):
     """
-    训练BPE模型。
+    Trains the BPE model by iteratively merging the most frequent character pairs.
 
     Args:
-        corpus_text (str): 原始文本语料。
-        num_merges (int): 要执行的合并操作次数。
+        corpus_text (str): The raw text corpus.
+        num_merges (int): The number of merge operations to perform.
 
     Returns:
         tuple: (
-            final_vocab (set): 最终的词典（包含单字符和合并后的子词）。
-            merge_rules (list): 按学习顺序列出的合并规则 (pair_to_merge)。
+            final_char_vocab (set): The final vocabulary, containing single characters
+                                     and merged character sequences (subwords).
+            merge_rules (list): A list of merge rules (character pairs like ('c1','c2'))
+                                 in the order they were learned.
         )
     """
-    # 1. 初始准备
-    word_counts, current_vocab = get_initial_vocab_and_word_counts(corpus_text)
-    # `word_counts` 的 key 是 'c h a r1 c h a r2 ... </w>' 形式
+    # 1. Initial Setup:
+    # word_char_counts: keys are character sequences (e.g., "l o w </w>"), values are frequencies.
+    # current_char_vocab: set of unique characters and, progressively, merged character sequences.
+    word_char_counts, current_char_vocab = get_initial_vocab_and_word_counts(corpus_text)
 
-    merge_rules = [] # 存储合并规则，顺序很重要
+    # Stores merge rules (tuples of character_pair_to_merge) in order of learning.
+    merge_rules = []
 
-    print("--- 开始 BPE 训练迭代 ---\n")
+    print("--- Starting BPE Training Iterations ---\n")
     for i in range(num_merges):
-        print(f"--- 合并迭代 {i + 1}/{num_merges} ---")
+        print(f"--- Merge Iteration {i + 1}/{num_merges} ---")
 
-        # 2. 统计相邻符号对频率
-        pair_stats = get_pair_stats(word_counts)
-        # print(f"当前符号对频率: {pair_stats}")
+        # 2. Count frequencies of adjacent character pairs in the current set of sequences.
+        # pair_stats: keys are tuples like ('c1', 'c2'), values are their frequencies.
+        pair_stats = get_pair_stats(word_char_counts)
 
         if not pair_stats:
-            print("没有更多可合并的符号对，提前停止。")
-            break # 如果没有可合并的对了，就停止
+            print("No more character pairs to merge. Stopping training early.")
+            break # Stop if no pairs can be merged (e.g., all sequences are single tokens).
 
-        # 3. 找出频率最高的符号对
-        # max(iterable, key=function)
-        # pair_stats.get 会返回对应 key 的 value，作为排序依据
-        best_pair = max(pair_stats, key=pair_stats.get)
-        best_pair_freq = pair_stats[best_pair]
-        print(f"最高频对: {best_pair} (频率: {best_pair_freq})")
+        # 3. Find the most frequent character pair.
+        # max() on dict uses keys; key=pair_stats.get sorts by values.
+        best_char_pair = max(pair_stats, key=pair_stats.get)
+        best_pair_freq = pair_stats[best_char_pair]
+        print(f"Most frequent pair: {best_char_pair} (Frequency: {best_pair_freq})")
 
-        # 4. 合并该符号对并更新词典
-        merged_symbol = "".join(best_pair)
-        current_vocab.add(merged_symbol)
-        merge_rules.append(best_pair) # 记录这条规则
+        # 4. Merge this character pair to form a new character sequence (segment/subword).
+        # Add this new segment to the vocabulary.
+        merged_char_sequence = "".join(best_char_pair)
+        current_char_vocab.add(merged_char_sequence)
+        merge_rules.append(best_char_pair) # Record this merge rule.
 
-        # 5. 更新语料库中的表示
-        word_counts = merge_pair(best_pair, word_counts)
-        print(f"合并后，新符号 '{merged_symbol}' 加入词典。")
-        # print(f"更新后的词频表示: {word_counts}")
-        # print(f"当前词典大小: {len(current_vocab)}, 词典: {sorted(list(current_vocab))}\n")
+        # 5. Update the corpus representation by applying the merge to all affected sequences.
+        word_char_counts = merge_pair(best_char_pair, word_char_counts)
+        print(f"After merge, new segment '{merged_char_sequence}' added to vocabulary.")
+        # Optional: print details for debugging during development
+        # print(f"Updated word_char_counts: {word_char_counts}")
+        # print(f"Current vocabulary size: {len(current_char_vocab)}, Vocabulary (sample): {sorted(list(current_char_vocab))[:10]}\n")
         print("-" * 30)
 
 
-    print("\n--- BPE 训练完成 ---")
-    print(f"最终词典大小: {len(current_vocab)}")
-    print(f"最终词典 (部分): {sorted(list(current_vocab))[:20]} ...") # 只显示一部分
-    print(f"学习到的合并规则 (共 {len(merge_rules)} 条):")
+    print("\n--- BPE Training Complete ---")
+    print(f"Final character vocabulary size: {len(current_char_vocab)}")
+    print(f"Final vocabulary (sample): {sorted(list(current_char_vocab))[:20]} ...") # Display a sample
+    print(f"Learned merge rules (Total: {len(merge_rules)}):")
     for idx, rule in enumerate(merge_rules):
+        # rule is like ('c1', 'c2'), ''.join(rule) is 'c1c2'
         print(f"  {idx+1}. {rule} -> {''.join(rule)}")
 
-    return current_vocab, merge_rules
+    return current_char_vocab, merge_rules
 
 
 def tokenize_word_with_bpe(word_string, merge_rules):
     """
-    使用学习到的BPE合并规则来对单个新词进行分词。
+    Tokenizes a single word into subword units using the learned BPE merge rules.
+    This process is character-based.
 
     Args:
-        word_string (str): 要分词的单词（不含 </w>）。
-        merge_rules (list): 按学习顺序列出的合并规则 (pair_to_merge)。
+        word_string (str): The word to tokenize (e.g., "lowest"). It should not contain EOW.
+        merge_rules (list): A list of merge rules (character pairs, e.g., ('c1', 'c2'))
+                             in the order they were learned.
 
     Returns:
-        list: 分词后的子词列表。
+        list: A list of tokens (characters or merged character sequences, e.g. ['low', 'est</w>']).
     """
     if not word_string:
         return []
 
-    # 1. 预处理：拆分为字符，并添加 EOW
-    tokens = list(word_string) + [EOW]
-    # print(f"初始 tokens: {tokens}")
+    # 1. Preprocessing: Split the word into individual characters and append EOW.
+    # e.g., "lowest" -> ['l', 'o', 'w', 'e', 's', 't', '</w>']
+    char_tokens = list(word_string) + [EOW]
+    # print(f"Initial character tokens: {char_tokens}")
 
-    # 2. 迭代应用合并规则 (按学习顺序)
-    #    对于每个规则，我们扫描整个当前 token 序列，应用该规则
-    for pair_to_merge in merge_rules:
-        new_tokens = []
+    # 2. Iteratively apply merge rules in the learned order.
+    #    For each rule, scan the current token sequence and apply the merge where possible.
+    for char_pair_to_merge in merge_rules: # e.g., char_pair_to_merge = ('e', 's')
+        new_char_tokens = []
         i = 0
-        while i < len(tokens):
-            # 检查当前位置和下一个位置是否能形成要合并的对
-            if i < len(tokens) - 1 and (tokens[i], tokens[i+1]) == pair_to_merge:
-                new_tokens.append("".join(pair_to_merge)) # 合并
-                i += 2 # 跳过两个已处理的 token
+        while i < len(char_tokens):
+            # Check if the current token and the next one form the pair to merge.
+            if i < len(char_tokens) - 1 and \
+               (char_tokens[i], char_tokens[i+1]) == char_pair_to_merge:
+                # If yes, merge them into a single token.
+                new_char_tokens.append("".join(char_pair_to_merge))
+                i += 2 # Move past the two merged tokens.
             else:
-                new_tokens.append(tokens[i]) # 不合并，直接添加
+                # If no, keep the current token as is.
+                new_char_tokens.append(char_tokens[i])
                 i += 1
-        tokens = new_tokens # 更新 token 序列以备下一条规则使用
-        # print(f"应用规则 {pair_to_merge} -> {''.join(pair_to_merge)} 后: {tokens}")
+        char_tokens = new_char_tokens # Update token sequence for the next rule.
+        # print(f"Applied rule {char_pair_to_merge} -> {''.join(char_pair_to_merge)}, Tokens: {char_tokens}")
 
-    return tokens
+    return char_tokens
+
+
+# --- Save and Load BPE Model ---
+def save_bpe_model(char_vocab, merge_rules, base_filename):
+    """
+    Saves the BPE model (vocabulary and merge rules) to files.
+
+    Args:
+        char_vocab (set): The character vocabulary (including merged sequences).
+        merge_rules (list): A list of merge rules (tuples of char_pair_to_merge).
+        base_filename (str): The base name for the output files.
+                             ".vocab" and ".merges" will be appended.
+    """
+    vocab_file = base_filename + ".vocab"
+    merges_file = base_filename + ".merges"
+
+    # Save vocabulary
+    # Store as a sorted list for consistency, one token per line.
+    with open(vocab_file, 'w', encoding='utf-8') as f:
+        for token in sorted(list(char_vocab)):
+            f.write(token + '\n')
+    print(f"Vocabulary saved to: {vocab_file}")
+
+    # Save merge rules
+    # Each rule is a tuple, e.g., ('e', 's'). Store as "e s" per line.
+    with open(merges_file, 'w', encoding='utf-8') as f:
+        for rule in merge_rules:
+            f.write(f"{rule[0]} {rule[1]}\n")
+    print(f"Merge rules saved to: {merges_file}")
+
+
+def load_bpe_model(base_filename):
+    """
+    Loads a BPE model (vocabulary and merge rules) from files.
+
+    Args:
+        base_filename (str): The base name of the model files.
+                             Assumes ".vocab" and ".merges" extensions.
+
+    Returns:
+        tuple: (
+            char_vocab (set): The loaded character vocabulary.
+            merge_rules (list): The loaded list of merge rules (tuples).
+        )
+    Returns None, None if files are not found.
+    """
+    vocab_file = base_filename + ".vocab"
+    merges_file = base_filename + ".merges"
+    
+    loaded_vocab = set()
+    loaded_merge_rules = []
+
+    try:
+        # Load vocabulary
+        with open(vocab_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                loaded_vocab.add(line.strip())
+        print(f"Vocabulary loaded from: {vocab_file}")
+
+        # Load merge rules
+        # Each line is "c1 c2", convert back to tuple ('c1', 'c2').
+        with open(merges_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split(' ')
+                if len(parts) == 2:
+                    loaded_merge_rules.append((parts[0], parts[1]))
+                elif line.strip(): # Non-empty line that isn't a pair
+                    print(f"Warning: Malformed rule in {merges_file}: '{line.strip()}'")
+        print(f"Merge rules loaded from: {merges_file}")
+        
+        return loaded_vocab, loaded_merge_rules
+
+    except FileNotFoundError:
+        print(f"Error: Model files not found for base_filename: {base_filename}")
+        return None, None
 
 
 # --- 主程序和示例 ---
@@ -216,23 +317,79 @@ if __name__ == "__main__":
     num_merges = 20 # 设定合并次数
 
     # 训练BPE
-    final_vocab, learned_merge_rules = train_bpe(corpus, num_merges)
+    print("--- Training Original BPE Model ---")
+    original_char_vocab, original_merge_rules = train_bpe(corpus, num_merges)
 
-    print("\n--- 使用BPE进行分词测试 ---")
+    print("\n--- Tokenizing with Original Model ---")
     test_words = ["lowest", "newer", "widely", "huggingface", "unknownword", "a", "new", "algorithm", "face"]
+    original_tokenized_results = {}
     for word in test_words:
-        tokenized_output = tokenize_word_with_bpe(word, learned_merge_rules)
-        print(f"单词 '{word}' -> 分词结果: {tokenized_output}")
+        tokenized_output = tokenize_word_with_bpe(word, original_merge_rules)
+        original_tokenized_results[word] = tokenized_output
+        print(f"Word '{word}' -> Original Tokens: {tokenized_output}")
 
     # 检查一些特殊的token
-    print("\n--- 检查词典和规则 ---")
-    print(f"最终词典中是否有 'est</w>'? : {'est</w>' in final_vocab}")
-    print(f"最终词典中是否有 'low'? : {'low' in final_vocab}")
-    print(f"最终词典中是否有 'hugg'? : {'hugg' in final_vocab}")
+    print("\n--- Checking Original Vocabulary and Rules ---")
+    print(f"Is 'est</w>' in original vocabulary? : {'est</w>' in original_char_vocab}")
+    print(f"Is 'low' in original vocabulary? : {'low' in original_char_vocab}")
+    print(f"Is 'hugg' in original vocabulary? : {'hugg' in original_char_vocab}")
 
-    # 看看如果合并次数很少会怎样
-    print("\n--- 测试较少合并次数 (例如 5 次) ---")
-    _, few_rules = train_bpe(corpus, 5)
-    for word in ["lowest", "newer"]:
-        tokenized_output = tokenize_word_with_bpe(word, few_rules)
-        print(f"单词 '{word}' (5次合并) -> 分词结果: {tokenized_output}")
+    # --- Save and Load Demonstration ---
+    model_basename = "bpe_char_model_test"
+    print(f"\n--- Saving BPE Model to '{model_basename}.*' ---")
+    save_bpe_model(original_char_vocab, original_merge_rules, model_basename)
+
+    print(f"\n--- Loading BPE Model from '{model_basename}.*' ---")
+    loaded_char_vocab, loaded_merge_rules = load_bpe_model(model_basename)
+
+    if loaded_char_vocab is not None and loaded_merge_rules is not None:
+        print("\n--- Verifying Loaded Model ---")
+        # 1. Compare vocabularies (order might differ due to set properties, so compare sizes and content)
+        if len(original_char_vocab) == len(loaded_char_vocab) and \
+           original_char_vocab == loaded_char_vocab:
+            print("Vocabulary successfully saved and loaded: Identical.")
+        else:
+            print("Vocabulary mismatch after loading!")
+            # print(f"Original vocab: {sorted(list(original_char_vocab))}")
+            # print(f"Loaded vocab  : {sorted(list(loaded_char_vocab))}")
+
+
+        # 2. Compare merge rules (order and content should be identical)
+        if original_merge_rules == loaded_merge_rules:
+            print("Merge rules successfully saved and loaded: Identical.")
+        else:
+            print("Merge rules mismatch after loading!")
+            # print(f"Original rules: {original_merge_rules}")
+            # print(f"Loaded rules  : {loaded_merge_rules}")
+
+        print("\n--- Tokenizing with Loaded Model ---")
+        loaded_tokenized_results = {}
+        for word in test_words:
+            tokenized_output = tokenize_word_with_bpe(word, loaded_merge_rules)
+            loaded_tokenized_results[word] = tokenized_output
+            print(f"Word '{word}' -> Loaded Tokens: {tokenized_output}")
+
+        # 3. Compare tokenization results
+        all_tokenization_matched = True
+        for word in test_words:
+            if original_tokenized_results[word] != loaded_tokenized_results[word]:
+                all_tokenization_matched = False
+                print(f"Mismatch for word '{word}':")
+                print(f"  Original: {original_tokenized_results[word]}")
+                print(f"  Loaded:   {loaded_tokenized_results[word]}")
+        
+        if all_tokenization_matched:
+            print("\nTokenization results with original and loaded models are IDENTICAL.")
+        else:
+            print("\nTokenization results with original and loaded models DIFFER.")
+
+    else:
+        print("Failed to load the model. Skipping verification.")
+
+
+    # 看看如果合并次数很少会怎样 (This part can remain as is, or be removed if not central to the test)
+    # print("\n--- 测试较少合并次数 (例如 5 次) ---")
+    # _, few_rules = train_bpe(corpus, 5) # Re-train for this specific test
+    # for word in ["lowest", "newer"]:
+    #     tokenized_output = tokenize_word_with_bpe(word, few_rules)
+    #     print(f"单词 '{word}' (5次合并) -> 分词结果: {tokenized_output}")
