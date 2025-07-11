@@ -1,0 +1,5 @@
+[Server] Set multiprocessing start method to 'spawn'.
+[Server] Starting server on port 50051...
+[Server] Received assessment request: ea37272d-918d-47e3-9c92-e7b3c0daeedb for GPU: 0
+[Worker PID: 2679] Assigned to GPU: 0. Simulating work for request: ea37272d-918d-47e3-9c92-e7b3c0daeedb
+[Worker PID: 2679] Work finished for request: ea37272d-918d-47e3-9c92-e7b3c0daeedb

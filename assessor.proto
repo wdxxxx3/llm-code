@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package assessor;
+
+// Message for an assessment request
+message AssessorRequest {
+  string request_id = 1;         // Unique ID for the request
+  string source_machine = 2;     // Identifier for the source machine (Actor)
+  string source_worker_id = 3;   // Identifier for the source worker process
+  bytes payload = 4;             // The actual data to be assessed (e.g., model inputs as JSON string)
+  int32 gpu_id = 5;              // Target GPU ID for the assessment (for prototype)
+}
+
+// Message for an assessment response
+message AssessorResponse {
+  string request_id = 1;         // Corresponds to the AssessorRequest.request_id
+  string status = 2;             // Status of the assessment (e.g., "PROCESSING", "COMPLETED", "ERROR")
+  bytes result = 3;              // The assessment result (e.g., metrics as JSON string)
+  string error_message = 4;      // Error message if status is "ERROR"
+}
+
+// The Assessor service definition
+service AssessorService {
+  // Processes an assessment request
+  rpc ProcessAssessment(AssessorRequest) returns (AssessorResponse) {}
+}
