@@ -5,20 +5,25 @@ import uuid
 import json
 import time
 import redis
+import os
 
-# Redis connection details (must match worker and server)
-REDIS_HOST = '127.0.0.1' # Explicitly use IPv4
-REDIS_PORT = 6379
-REDIS_RESULT_KEY_PREFIX = 'result:'
+# Configuration from environment variables with defaults
+REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = int(os.environ.get('REDIS_PORT', '6379'))
+MASTER_HOST = os.environ.get('MASTER_HOST', '127.0.0.1') # Assuming master runs on localhost by default for client
+MASTER_PORT = int(os.environ.get('MASTER_PORT', '50051'))
+
+REDIS_RESULT_KEY_PREFIX = 'result:' # Could also be configurable
 
 # Polling configuration
 POLL_INTERVAL_SECONDS = 0.5
 MAX_POLL_ATTEMPTS = 120 # e.g., 120 attempts * 0.5s/attempt = 60 seconds timeout
 
 def run_client(gpu_id_to_use=0):
+    master_address = f"{MASTER_HOST}:{MASTER_PORT}"
     # Establish a channel to the gRPC server (Master)
     try:
-        with grpc.insecure_channel('localhost:50051') as channel:
+        with grpc.insecure_channel(master_address) as channel:
             stub = assessor_pb2_grpc.AssessorServiceStub(channel)
             client_request_id = str(uuid.uuid4()) # This is the ID the client initially tracks
             sample_payload_data = {"model_name": "test_model_v2_redis", "input_features": [1.5, 2.0, 3.5, 4.0]}

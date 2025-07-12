@@ -4,11 +4,11 @@ import time
 import os
 import sys
 
-# Redis connection details
-REDIS_HOST = '127.0.0.1' # Explicitly use IPv4
-REDIS_PORT = 6379
-REDIS_TASK_QUEUE_NAME = 'assessor_task_queue'
-REDIS_RESULT_KEY_PREFIX = 'result:'
+# Configuration from environment variables with defaults
+REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = int(os.environ.get('REDIS_PORT', '6379'))
+REDIS_TASK_QUEUE_NAME = 'assessor_task_queue' # Could also be configurable
+REDIS_RESULT_KEY_PREFIX = 'result:' # Could also be configurable
 REDIS_RESULT_EXPIRY_SECONDS = 3600 # 1 hour
 
 # Worker function to simulate GPU task (adapted from the original server)

@@ -1,3 +1,7 @@
+print("DEBUG: assessor_server.py execution started")
+import sys
+sys.stdout.flush()
+
 import grpc
 from concurrent import futures
 import time
@@ -7,21 +11,24 @@ import redis
 
 import assessor_pb2
 import assessor_pb2_grpc
+import os
 
-# Redis connection details
-REDIS_HOST = '127.0.0.1' # Explicitly use IPv4
-REDIS_PORT = 6379
-REDIS_TASK_QUEUE_NAME = 'assessor_task_queue'
+# Configuration from environment variables with defaults
+REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = int(os.environ.get('REDIS_PORT', '6379'))
+GRPC_PORT = int(os.environ.get('GRPC_PORT', '50051'))
+REDIS_TASK_QUEUE_NAME = 'assessor_task_queue' # This could also be configurable if needed
 
 class AssessorServicer(assessor_pb2_grpc.AssessorServiceServicer):
     def __init__(self):
+        self.redis_host = REDIS_HOST
+        self.redis_port = REDIS_PORT
         try:
-            self.redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=False)
+            self.redis_client = redis.Redis(host=self.redis_host, port=self.redis_port, db=0, decode_responses=False)
             self.redis_client.ping() # Verify connection
-            print(f"[Server] Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+            print(f"[Server] Connected to Redis at {self.redis_host}:{self.redis_port}")
         except redis.exceptions.ConnectionError as e:
-            print(f"[Server] CRITICAL: Could not connect to Redis at {REDIS_HOST}:{REDIS_PORT}. Error: {e}")
-            # Depending on policy, might want to exit or try reconnecting. For now, it will fail on operations.
+            print(f"[Server] CRITICAL: Could not connect to Redis at {self.redis_host}:{self.redis_port}. Error: {e}")
             self.redis_client = None
 
 
@@ -86,8 +93,9 @@ class AssessorServicer(assessor_pb2_grpc.AssessorServiceServicer):
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     assessor_pb2_grpc.add_AssessorServiceServicer_to_server(AssessorServicer(), server)
-    server.add_insecure_port('[::]:50051')
-    print(f"[Server] Starting Master gRPC server on port 50051, queueing to Redis list '{REDIS_TASK_QUEUE_NAME}'...")
+    grpc_listen_address = f'[::]:{GRPC_PORT}'
+    server.add_insecure_port(grpc_listen_address)
+    print(f"[Server] Starting Master gRPC server on {grpc_listen_address}, queueing to Redis list '{REDIS_TASK_QUEUE_NAME}' at {REDIS_HOST}:{REDIS_PORT}...")
     server.start()
     try:
         while True:

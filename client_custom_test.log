@@ -1,0 +1,3 @@
+--- Running client (will send request to Master and poll Redis for GPU 0) ---
+[Client] Sending gRPC request (client_request_id: d261dbdf-b4fa-4f0f-9521-bdf096b5ee71) to Master for GPU 0 with payload: {'model_name': 'test_model_v2_redis', 'input_features': [1.5, 2.0, 3.5, 4.0]}
+[Client] gRPC RPC failed: StatusCode.INTERNAL - Internal server error: No Redis connection.
