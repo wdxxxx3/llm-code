@@ -1,0 +1,4 @@
+# tokenizer/ only needs the Python standard library.
+# rlhf/ppo.py needs:
+torch
+gymnasium

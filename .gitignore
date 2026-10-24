@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# Model files written by the tokenizer demos and tests
+tokenizer/*.vocab
+tokenizer/*.merges
+tokenizer/*.bvocab
+tokenizer/*.bmerges
+tokenizer/*.wp_vocab
+tokenizer/*.ulm_model
+tokenizer/tests/test_*_model_files/
+
+# Checkpoints
+*.pth
+*.pt
