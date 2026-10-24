@@ -21,8 +21,8 @@
 
 | 算法 | 思路 | 典型模型 |
 |---|---|---|
-| BPE | 反复合并出现次数最多的相邻符号对 | 早期 GPT、RoBERTa |
-| BBPE | 同 BPE，但在 UTF-8 字节上做，不会出现未知字符 | GPT-2 / GPT-3、LLaMA 3 |
+| BPE | 反复合并出现次数最多的相邻符号对 | GPT-1、早期机器翻译模型 |
+| BBPE | 同 BPE，但在 UTF-8 字节上做，不会出现未知字符 | GPT-2 / GPT-3、RoBERTa、LLaMA 3 |
 | WordPiece | 合并能让语料似然提升最多的符号对 | BERT |
 | ULM | 先给一个大词表，再用 EM + Viterbi 逐步删掉贡献最小的子词 | T5、ALBERT（SentencePiece） |
 
